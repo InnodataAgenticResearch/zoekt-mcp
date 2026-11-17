@@ -23,9 +23,46 @@ over your repositories regardless of the language you're working in.
 - **Backend:** a `zoekt-webserver` you run yourself via the Docker
   Compose file attached to every
   [GitHub release](https://github.com/radiovisual/zoekt-mcp/releases/latest) —
-  or point the MCP server at any existing zoekt-webserver you have
-  lying around.
+  or point the MCP server at any existing zoekt-webserver or
+  Microsoft 365-authenticated Zoekt web gateway (`https://136.82.105.184.nip.io`).
 - **Tools exposed:** `search_code`, `list_repos`, `get_file`.
+- **Microsoft 365 Web Gateway Auth (`v0.4.0`):** Built-in `zoekt-mcp login`,
+  `zoekt-mcp status`, and `zoekt-mcp logout` subcommands for authenticating
+  against an M365 FOCI-gated Zoekt web gateway before running MCP tools.
+- **Documentation & Quality Gates:** Full Docusaurus 3 site in [`docs/`](docs/content/intro.md)
+  (`just docs-serve` on `http://127.0.0.1:3000`) and hermetic Nix flake check
+  (`just check`: `shac`, `ruff`, `mypy --strict`, and 2x randomized 100%-coverage `pytest`).
+
+## Microsoft 365 Web Gateway Quickstart (Innodata Engineers)
+
+1. **Authenticate once against the Zoekt M365 Web Gateway:**
+
+   ```bash
+   zoekt-mcp login --zoekt-url https://136.82.105.184.nip.io
+   zoekt-mcp status --zoekt-url https://136.82.105.184.nip.io
+   ```
+
+   This exchanges your local M365 FOCI refresh token (or runs an interactive
+   Microsoft 365 device-code login) and saves a 7-day signed session token to
+   `~/.config/zoekt-mcp/auth.json` (`0600`).
+
+2. **Wire `zoekt-mcp` into Hermes Agent (`~/.hermes/config.yaml`) or Claude Code:**
+
+   ```yaml
+   mcp_servers:
+     zoekt:
+       command: zoekt-mcp
+       args:
+         - --zoekt-url
+         - https://136.82.105.184.nip.io
+   ```
+
+3. **Run Quality Gates & E2E Tests:**
+
+   ```bash
+   just check
+   just test-e2e https://136.82.105.184.nip.io
+   ```
 
 ## Architecture
 

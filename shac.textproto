@@ -1,0 +1,12 @@
+# shac configuration. Checks live in shac.star and checks/*.star.
+min_shac_version: "0.1.46"
+allow_network: false
+ignore: "/flake.lock"
+passthrough_env: [
+    {
+        # Set by makor's shac wrapper. Mounted read-only so Nix-built tools, whose
+        # dependencies live throughout /nix/store, run inside shac's sandbox.
+        name: "NIX_STORE"
+        is_path: true
+    }
+]

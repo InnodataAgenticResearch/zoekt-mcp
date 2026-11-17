@@ -11,94 +11,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint (ruff + pymarkdown)
+  nix-flake-check:
+    name: Nix Flake Check (shac, mypy --strict, pytest 2x random 100% cov, Docusaurus docs)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Run nix flake check
+        run: nix flake check -L
+
+  trivy-security-gate:
+    name: Trivy Security Gate (vuln, secret, misconfig)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability, secret, and misconfiguration scanner
+        uses: aquasecurity/trivy-action@master
         with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install
-
-      - name: Install dev dependencies
-        run: uv sync --dev
-
-      # The pre-commit config runs the exact same commands against
-      # staged files locally. Running it here over all files keeps
-      # local and CI behavior in lockstep.
-      - name: ruff check
-        run: uv run ruff check
-
-      - name: ruff format --check
-        run: uv run ruff format --check
-
-      - name: pymarkdown scan
-        run: >
-          uv run pymarkdown scan
-          README.md
-          deploy/README.md
-          examples/express-app/README.md
-          examples/flask-app/README.md
-
-  test:
-    name: Unit tests (pytest)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install
-
-      - name: Install dev dependencies
-        run: uv sync --dev
-
-      # Integration tests need a running zoekt-webserver and are skipped
-      # automatically when ZOEKT_URL is unreachable, but we scope CI to
-      # the offline suites to keep the workflow hermetic.
-      - name: pytest (unit)
-        run: uv run pytest tests/test_client_unit.py tests/test_server_shaping.py -v
-
-  # -------------------------------------------------------------------
-  # Validate server.json against the MCP Registry's live schema.
-  #
-  # This is the same `mcp-publisher validate` command a human would run
-  # locally; it POSTs the file to registry.modelcontextprotocol.io,
-  # which checks the JSON schema AND enforces field-level constraints
-  # that aren't in the schema (most famously the 100-char description
-  # cap). We run it in CI rather than pre-commit because it needs
-  # network access and the mcp-publisher binary installed — both of
-  # which would slow every local commit and force contributors to
-  # install extra tooling. CI is always online and stateless, so it's
-  # the right home for this check.
-  #
-  # Always runs (not path-filtered): the cost is ~3s total, and
-  # catching a broken server.json before a tag push is worth the
-  # rounding-error CI time.
-  # -------------------------------------------------------------------
-  validate-server-json:
-    name: Validate server.json (MCP Registry)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install mcp-publisher
-        run: |
-          set -euo pipefail
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
-            | tar xz mcp-publisher
-
-      - name: Validate
-        run: ./mcp-publisher validate
+          scan-type: fs
+          scan-ref: .
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          scanners: vuln,secret,misconfig

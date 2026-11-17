@@ -16,6 +16,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from .auth import resolve_auth_token
 from .client import ZoektClient
 from .config import ZoektConfig
 
@@ -37,17 +38,24 @@ DEFAULT_CONTEXT_LINES = 3
 CONTEXT_LINES_CEILING = 20
 
 
-def build_server(config: ZoektConfig) -> FastMCP:
+def build_server(config: ZoektConfig, *, client: ZoektClient | None = None) -> FastMCP:
     """Create a FastMCP server configured against ``config``.
 
     The returned server owns a :class:`ZoektClient`. Callers should run
     it via ``server.run(transport="stdio")`` and let process exit close
     the underlying HTTP client.
     """
-    client = ZoektClient(config.backend_url, timeout=config.timeout)
+    zoekt_client = client or ZoektClient(
+        config.backend_url,
+        timeout=config.timeout,
+        token_provider=lambda: resolve_auth_token(
+            explicit_token=config.auth_token,
+            auth_file=config.auth_file,
+        ),
+    )
     mcp = FastMCP(SERVER_NAME, instructions=SERVER_INSTRUCTIONS)
-    _register_tools(mcp, client)
-    mcp._zoekt_client = client  # type: ignore[attr-defined]
+    _register_tools(mcp, zoekt_client)
+    mcp.__dict__["_zoekt_client"] = zoekt_client
     return mcp
 
 
@@ -126,29 +134,6 @@ def _register_tools(mcp: FastMCP, client: ZoektClient) -> None:
 # ---------------------------------------------------------------------- #
 # Response shaping helpers
 # ---------------------------------------------------------------------- #
-#
-# zoekt's JSON responses are verbose. We trim them down to the fields
-# an agent actually cares about. Shapes below match the real output
-# from `zoekt-webserver -rpc` (tested against sourcegraph/zoekt-webserver
-# image, index format v16):
-#
-#   /api/search → {"Result": {FileCount, MatchCount, Duration, Files:
-#                    [{FileName, Repository, Language, Branches, Score,
-#                      ChunkMatches or LineMatches: [...]}]}}
-#
-#     - ChunkMatches (what you get when Opts.ChunkMatches=true, which
-#       is the client default) contain multi-line context blocks:
-#         {Content (base64), ContentStart {LineNumber, Column},
-#          Ranges: [{Start, End}], SymbolInfo: [{Sym, Kind, ...}],
-#          BestLineMatch, Score}
-#
-#     - LineMatches (the legacy format) are single lines:
-#         {LineNumber, Line (base64), LineStart, LineEnd,
-#          LineFragments: [{LineOffset, MatchLength, SymbolInfo}]}
-#
-#   /api/list   → {"List": {Repos: [{Repository: {Name, URL, Source,
-#                    Branches: [{Name, Version}]}, IndexMetadata:
-#                    {IndexTime, ...}, Stats: {...}}], Stats: {...}}}
 
 
 def _shape_search_result(query: str, raw: dict[str, Any]) -> dict[str, Any]:
@@ -231,17 +216,19 @@ def _shape_line_match(m: dict[str, Any]) -> dict[str, Any]:
         }
         for frag in fragments
     ]
+    before_raw = m.get("Before")
+    after_raw = m.get("After")
     return {
         "line": m.get("LineNumber"),
         "text": line_text,
         "highlights": highlights or None,
-        "before": m.get("Before"),
-        "after": m.get("After"),
+        "before": _decode_line(before_raw) if before_raw is not None else None,
+        "after": _decode_line(after_raw) if after_raw is not None else None,
     }
 
 
 def _decode_line(value: Any) -> str:
-    """Zoekt encodes ``Line`` as base64 bytes of the source line.
+    """Zoekt encodes ``Line`` (and ``Before``/``After``) as base64 bytes of the source line.
 
     Decode defensively: if the value is not a base64 string, fall back
     to ``str(value)`` so we never crash on a surprising response.

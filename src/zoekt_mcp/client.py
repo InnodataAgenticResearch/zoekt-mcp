@@ -1,4 +1,4 @@
-"""Async HTTP client for a zoekt-webserver backend.
+"""Async HTTP client for a zoekt-webserver backend or M365 Zoekt Auth Gate.
 
 Thin wrapper around the three zoekt-webserver endpoints we need:
 
@@ -9,17 +9,20 @@ Thin wrapper around the three zoekt-webserver endpoints we need:
 * ``GET  /print?format=raw`` — fetch a file's raw contents as
   ``text/plain``.
 
-The client is intentionally dumb: it does not interpret query syntax and does
-not post-process match results beyond returning the JSON body. Response
-shaping for the MCP tool surface lives in :mod:`zoekt_mcp.server`.
+Supports authenticated Zoekt web gateways via Bearer token and session cookie
+injection, and detects HTML SSO sign-in responses on ``/print?format=raw`` so
+unauthenticated gateway responses never masquerade as source code.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import TracebackType
 from typing import Any, Self
 
 import httpx
+
+from .auth import SESSION_COOKIE_NAME
 
 DEFAULT_BACKEND_URL = "http://localhost:6070"
 DEFAULT_TIMEOUT_SECONDS = 30.0
@@ -41,7 +44,7 @@ class ZoektBackendError(RuntimeError):
 
 
 class ZoektClient:
-    """Async client for a zoekt-webserver instance.
+    """Async client for a zoekt-webserver instance or M365 Zoekt Auth Gate.
 
     Use as an async context manager so the underlying ``httpx.AsyncClient``
     is closed deterministically::
@@ -56,12 +59,27 @@ class ZoektClient:
         *,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         http_client: httpx.AsyncClient | None = None,
+        auth_token: str | None = None,
+        token_provider: Callable[[], str | None] | None = None,
     ) -> None:
         self.backend_url = backend_url.rstrip("/")
         self._timeout = timeout
+        self._auth_token = auth_token
+        self._token_provider = token_provider
         # Allow injecting a pre-built client for tests (respx, etc.).
         self._owns_client = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=timeout)
+
+    def _auth_headers(self) -> dict[str, str]:
+        token = self._auth_token
+        if not token and self._token_provider is not None:
+            token = self._token_provider()
+        if not token:
+            return {}
+        return {
+            "Authorization": f"Bearer {token}",
+            "Cookie": f"{SESSION_COOKIE_NAME}={token}",
+        }
 
     async def __aenter__(self) -> Self:
         return self
@@ -107,7 +125,8 @@ class ZoektClient:
         payload = {"Q": query, "Opts": opts}
         data = await self._post_json("/api/search", payload)
         # zoekt wraps the search result under a top-level "Result" key.
-        return data.get("Result", data)
+        result = data.get("Result", data)
+        return dict(result) if isinstance(result, dict) else {}
 
     async def list_repos(self, query: str = "repo:.") -> dict[str, Any]:
         """List indexed repositories matching ``query``.
@@ -117,25 +136,51 @@ class ZoektClient:
         """
         payload = {"Q": query}
         data = await self._post_json("/api/list", payload)
-        return data.get("List", data)
+        result = data.get("List", data)
+        return dict(result) if isinstance(result, dict) else {}
 
     async def get_file(self, repo: str, path: str, branch: str = "HEAD") -> str:
         """Fetch raw file contents via ``/print?format=raw``.
 
         Returns the file body as a plain string. Raises
-        :class:`ZoektBackendError` on any non-2xx response so the tool
-        layer can surface a useful message to the agent.
+        :class:`ZoektBackendError` on any non-2xx response or when an SSO web
+        gateway returns an HTML sign-in page instead of ``text/plain``.
         """
         params = {"r": repo, "f": path, "b": branch, "format": "raw"}
+        headers = {"Accept": "text/plain, application/json"}
+        headers.update(self._auth_headers())
         try:
-            response = await self._http.get(f"{self.backend_url}/print", params=params)
+            response = await self._http.get(
+                f"{self.backend_url}/print",
+                params=params,
+                headers=headers,
+            )
         except httpx.HTTPError as exc:
             raise ZoektBackendError(f"GET /print failed: {exc}") from exc
+
+        if response.status_code in (401, 403):
+            msg = (
+                f"GET /print returned {response.status_code} (Unauthorized — run 'zoekt-mcp login')"
+            )
+            raise ZoektBackendError(
+                msg,
+                status_code=response.status_code,
+                body=_truncate(response.text),
+            )
 
         if response.status_code >= 400:
             raise ZoektBackendError(
                 f"GET /print returned {response.status_code}",
                 status_code=response.status_code,
+                body=_truncate(response.text),
+            )
+
+        content_type = response.headers.get("content-type", "").lower()
+        if "text/html" in content_type and not path.lower().endswith((".html", ".htm")):
+            raise ZoektBackendError(
+                "GET /print returned text/html instead of raw source "
+                "(gateway requires authentication — run 'zoekt-mcp login')",
+                status_code=401,
                 body=_truncate(response.text),
             )
 
@@ -147,10 +192,23 @@ class ZoektClient:
 
     async def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self.backend_url}{path}"
+        headers = {"Accept": "application/json"}
+        headers.update(self._auth_headers())
         try:
-            response = await self._http.post(url, json=payload)
+            response = await self._http.post(url, json=payload, headers=headers)
         except httpx.HTTPError as exc:
             raise ZoektBackendError(f"POST {path} failed: {exc}") from exc
+
+        if response.status_code in (401, 403):
+            msg = (
+                f"POST {path} returned {response.status_code} "
+                "(Unauthorized — run 'zoekt-mcp login')"
+            )
+            raise ZoektBackendError(
+                msg,
+                status_code=response.status_code,
+                body=_truncate(response.text),
+            )
 
         if response.status_code >= 400:
             raise ZoektBackendError(
@@ -160,13 +218,21 @@ class ZoektClient:
             )
 
         try:
-            return response.json()
+            parsed = response.json()
         except ValueError as exc:
             raise ZoektBackendError(
                 f"POST {path} returned invalid JSON",
                 status_code=response.status_code,
                 body=_truncate(response.text),
             ) from exc
+
+        if not isinstance(parsed, dict):
+            raise ZoektBackendError(
+                f"POST {path} returned non-object JSON",
+                status_code=response.status_code,
+                body=_truncate(response.text),
+            )
+        return parsed
 
 
 def _truncate(text: str, limit: int = 500) -> str:
