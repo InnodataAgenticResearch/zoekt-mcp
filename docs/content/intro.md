@@ -9,7 +9,7 @@ slug: /
 ## Key Capabilities
 
 1. **M365 Web Gateway Authentication (`zoekt-mcp login`, `status`, `logout`)**:
-   - Engineers authenticate once against our Microsoft 365-gated Zoekt web gateway (`https://136.82.105.184.nip.io`) using either zero-prompt FOCI refresh token exchange or an interactive Microsoft 365 device-code login.
+   - Engineers authenticate once against our Microsoft 365-gated Zoekt web gateway (`https://code.innodata.studio`) using either zero-prompt FOCI refresh token exchange or an interactive Microsoft 365 device-code login.
    - Persists a 7-day HMAC-SHA256 signed session token in `~/.config/zoekt-mcp/auth.json` (`0600`) and automatically injects `Authorization: Bearer <token>` and `Cookie: zoekt_m365_session=<token>` on every MCP request.
 2. **Three High-Signal MCP Tools**:
    - `list_repos`: Enumerate indexed repositories matching an optional regex filter.

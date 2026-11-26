@@ -65,7 +65,7 @@ def test_load_config_flags_and_subcommands(tmp_path: Path) -> None:
         [
             "login",
             "--zoekt-url",
-            "https://136.82.105.184.nip.io",
+            "https://code.innodata.studio",
             "--timeout",
             "12.5",
             "--token",
@@ -78,7 +78,7 @@ def test_load_config_flags_and_subcommands(tmp_path: Path) -> None:
         ]
     )
     assert cfg_login.subcommand == "login"
-    assert cfg_login.backend_url == "https://136.82.105.184.nip.io"
+    assert cfg_login.backend_url == "https://code.innodata.studio"
     assert cfg_login.timeout == 12.5
     assert cfg_login.auth_token == "tok-abc"
     assert cfg_login.auth_file == auth_p
@@ -155,7 +155,7 @@ def test_stored_session_and_foci_extraction(tmp_path: Path) -> None:
 
 @respx.mock
 async def test_exchange_refresh_token_and_whoami() -> None:
-    base = "https://136.82.105.184.nip.io"
+    base = "https://code.innodata.studio"
     respx.post(f"{base}/_auth/token").mock(
         return_value=httpx.Response(
             200,
@@ -197,7 +197,7 @@ async def test_exchange_refresh_token_and_whoami() -> None:
 
 @respx.mock
 async def test_run_device_code_login_flows() -> None:
-    base = "https://136.82.105.184.nip.io"
+    base = "https://code.innodata.studio"
     opened_urls: list[str] = []
     printed: list[str] = []
 
@@ -299,7 +299,7 @@ async def test_run_device_code_login_flows() -> None:
 
 @respx.mock
 def test_cli_main_subcommands(tmp_path: Path) -> None:
-    base = "https://136.82.105.184.nip.io"
+    base = "https://code.innodata.studio"
     auth_file = tmp_path / "auth.json"
     foci_file = tmp_path / "foci.json"
     foci_file.write_text(json.dumps({"RefreshToken": {"k": {"secret": "rt-good"}}}))
