@@ -2,7 +2,7 @@
 
 Supports two live backend modes:
 1. Local docker-compose verification corpus (`examples/flask-app` and `examples/express-app`).
-2. Innodata M365-authenticated Zoekt GKE Gateway (`https://136.82.105.184.nip.io`), verifying:
+2. Innodata M365-authenticated Zoekt GKE Gateway (`https://code.innodata.studio`), verifying:
    - Unauthenticated requests to `/api/list`, `/api/search`, and `/print?format=raw` are
      rejected with HTTP 401 (never returning the HTML login page as raw source code).
    - `zoekt-mcp login` exchanges an M365 FOCI refresh token at `POST /_auth/token` and
@@ -48,7 +48,7 @@ pytestmark = pytest.mark.skipif(
     reason=(
         f"zoekt-webserver at {BACKEND_URL} is not reachable. "
         "Bring the stack up with `docker compose -f deploy/docker-compose.yml up -d` "
-        "or set ZOEKT_URL=https://136.82.105.184.nip.io."
+        "or set ZOEKT_URL=https://code.innodata.studio."
     ),
 )
 

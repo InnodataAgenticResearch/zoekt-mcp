@@ -24,7 +24,7 @@ over your repositories regardless of the language you're working in.
   Compose file attached to every
   [GitHub release](https://github.com/radiovisual/zoekt-mcp/releases/latest) —
   or point the MCP server at any existing zoekt-webserver or
-  Microsoft 365-authenticated Zoekt web gateway (`https://136.82.105.184.nip.io`).
+  Microsoft 365-authenticated Zoekt web gateway (`https://code.innodata.studio`).
 - **Tools exposed:** `search_code`, `list_repos`, `get_file`.
 - **Microsoft 365 Web Gateway Auth (`v0.4.0`):** Built-in `zoekt-mcp login`,
   `zoekt-mcp status`, and `zoekt-mcp logout` subcommands for authenticating
@@ -38,8 +38,8 @@ over your repositories regardless of the language you're working in.
 1. **Authenticate once against the Zoekt M365 Web Gateway:**
 
    ```bash
-   zoekt-mcp login --zoekt-url https://136.82.105.184.nip.io
-   zoekt-mcp status --zoekt-url https://136.82.105.184.nip.io
+   zoekt-mcp login --zoekt-url https://code.innodata.studio
+   zoekt-mcp status --zoekt-url https://code.innodata.studio
    ```
 
    This exchanges your local M365 FOCI refresh token (or runs an interactive
@@ -54,14 +54,14 @@ over your repositories regardless of the language you're working in.
        command: zoekt-mcp
        args:
          - --zoekt-url
-         - https://136.82.105.184.nip.io
+         - https://code.innodata.studio
    ```
 
 3. **Run Quality Gates & E2E Tests:**
 
    ```bash
    just check
-   just test-e2e https://136.82.105.184.nip.io
+   just test-e2e https://code.innodata.studio
    ```
 
 ## Architecture
