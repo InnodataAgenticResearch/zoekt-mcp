@@ -48,7 +48,7 @@ async def client() -> AsyncIterator[ZoektClient]:
 
 
 def test_version_and_truncate() -> None:
-    assert zoekt_mcp.__version__ == "0.4.0"
+    assert zoekt_mcp.__version__ == "0.4.1"
     assert _truncate("short", limit=10) == "short"
     long_txt = "x" * 25
     assert _truncate(long_txt, limit=10) == "xxxxxxxxxx... [truncated 15 chars]"
@@ -544,3 +544,50 @@ async def test_get_file_returns_raw_text_and_handles_errors(client: ZoektClient)
     respx.get(PRINT_URL).mock(side_effect=httpx.ConnectError("down"))
     with pytest.raises(ZoektBackendError, match="GET /print failed"):
         await client.get_file("flask-app", "app.py")
+
+
+@respx.mock
+async def test_get_repo_metadata_handles_all_response_shapes(client: ZoektClient) -> None:
+    meta_url = f"{DEFAULT_BACKEND_URL}/api/repo-metadata"
+
+    # 1. Valid gateway payload wrapped under "repos" (plus non-dict entry skipped)
+    respx.get(meta_url).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "generated_at": "2026-11-27T00:00:00Z",
+                "repos": {
+                    "InnodataAgenticResearch/makor": {
+                        "owners": [{"login": "dannyzen-innodata", "contributions": 42}],
+                        "pushed_at": "2026-11-27T00:00:00Z",
+                        "pr_open": 1,
+                        "pr_total": 10,
+                    },
+                    "invalid_entry": "not-a-dict",
+                },
+            },
+        )
+    )
+    meta = await client.get_repo_metadata()
+    assert list(meta.keys()) == ["InnodataAgenticResearch/makor"]
+    assert meta["InnodataAgenticResearch/makor"]["pr_total"] == 10
+
+    # 2. Bare zoekt-webserver returning 404
+    respx.get(meta_url).mock(return_value=httpx.Response(404, text="not found"))
+    assert await client.get_repo_metadata() == {}
+
+    # 3. Invalid JSON on 200
+    respx.get(meta_url).mock(return_value=httpx.Response(200, text="<html>not json</html>"))
+    assert await client.get_repo_metadata() == {}
+
+    # 4. Top-level JSON list instead of object
+    respx.get(meta_url).mock(return_value=httpx.Response(200, json=[1, 2, 3]))
+    assert await client.get_repo_metadata() == {}
+
+    # 5. "repos" key is not a dict
+    respx.get(meta_url).mock(return_value=httpx.Response(200, json={"repos": ["bad"]}))
+    assert await client.get_repo_metadata() == {}
+
+    # 6. Transport error
+    respx.get(meta_url).mock(side_effect=httpx.ConnectError("unreachable"))
+    assert await client.get_repo_metadata() == {}
