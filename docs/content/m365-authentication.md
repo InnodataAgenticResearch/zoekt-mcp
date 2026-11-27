@@ -43,7 +43,13 @@ mcp_servers:
 ```bash
 claude mcp add zoekt \
   --env ZOEKT_URL=https://code.innodata.studio \
-  -- uvx --from git+https://github.com/InnodataAgenticResearch/zoekt-mcp zoekt-mcp
+  -- uvx --from git+https://github.com/dannyzen-innodata/zoekt-mcp zoekt-mcp
+```
+
+### Nix Profile (Makor Workstations)
+
+```bash
+nix profile install github:dannyzen-innodata/zoekt-mcp#zoekt-mcp
 ```
 
 ## 4. Log Out (`zoekt-mcp logout`)

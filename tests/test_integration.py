@@ -136,8 +136,12 @@ async def test_live_unauthenticated_gateway_rejection_and_m365_e2e(tmp_path: Pat
 
         repos_res = await tools["list_repos"].fn(filter="makor")
         assert repos_res["count"] >= 1
-        repo_names = [r["name"] for r in repos_res["repos"]]
-        assert "github.com/InnodataAgenticResearch/makor" in repo_names
+        makor_entries = [
+            r for r in repos_res["repos"] if r["name"] == "github.com/InnodataAgenticResearch/makor"
+        ]
+        assert len(makor_entries) == 1
+        assert "pushed_at" in makor_entries[0]
+        assert isinstance(makor_entries[0].get("owners"), list)
 
         search_res = await tools["search_code"].fn(
             query="repo:InnodataAgenticResearch/makor file:^README\\.md$ Makor",
